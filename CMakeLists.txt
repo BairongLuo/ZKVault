@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(CTest)
+
 find_package(OpenSSL REQUIRED)
 
 add_executable(zkvault
@@ -23,3 +25,10 @@ target_include_directories(zkvault PRIVATE
 )
 
 target_link_libraries(zkvault PRIVATE OpenSSL::Crypto)
+
+if(BUILD_TESTING)
+    add_test(
+        NAME zkvault_cli_smoke
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke_test.sh $<TARGET_FILE:zkvault>
+    )
+endif()
