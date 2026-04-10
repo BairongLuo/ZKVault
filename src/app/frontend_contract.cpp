@@ -432,6 +432,48 @@ FrontendSessionState ResolveStateTransition(
     throw std::runtime_error("unsupported frontend state transition");
 }
 
+FrontendStateMachine::FrontendStateMachine(
+    FrontendSessionState initial_state) noexcept
+    : state_(initial_state) {}
+
+FrontendSessionState FrontendStateMachine::state() const noexcept {
+    return state_;
+}
+
+void FrontendStateMachine::SetState(FrontendSessionState state) noexcept {
+    state_ = state;
+}
+
+FrontendSessionState FrontendStateMachine::ApplyEvent(FrontendStateEvent event) {
+    state_ = ResolveStateTransition(state_, event);
+    return state_;
+}
+
+FrontendSessionState FrontendStateMachine::ApplyActionResult(
+    const FrontendActionResult& result) noexcept {
+    state_ = result.state;
+    return state_;
+}
+
+FrontendSessionState FrontendStateMachine::HandleStartup(bool vault_exists) {
+    return ApplyEvent(ResolveStartupEvent(vault_exists));
+}
+
+FrontendSessionState FrontendStateMachine::HandleCommand(FrontendCommandKind kind) {
+    return ApplyEvent(ResolveCommandEvent(kind));
+}
+
+FrontendSessionState FrontendStateMachine::HandleConfirmationAccepted() {
+    return ApplyEvent(FrontendStateEvent::kConfirmationAccepted);
+}
+
+FrontendSessionState FrontendStateMachine::HandleFailure(bool session_unlocked) {
+    static_cast<void>(ApplyEvent(FrontendStateEvent::kOperationFailed));
+    return ApplyEvent(
+        session_unlocked ? FrontendStateEvent::kRecoveryCompletedWhileUnlocked
+                         : FrontendStateEvent::kRecoveryCompletedWhileLocked);
+}
+
 FrontendSessionState ResolveStartupState(bool vault_exists) {
     return ResolveStateTransition(
         FrontendSessionState::kInitializingVault,

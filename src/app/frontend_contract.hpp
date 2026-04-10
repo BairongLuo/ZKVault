@@ -73,6 +73,35 @@ struct FrontendStateTransition {
     FrontendSessionState to_state;
 };
 
+struct FrontendActionResult;
+
+class FrontendStateMachine {
+public:
+    explicit FrontendStateMachine(
+        FrontendSessionState initial_state =
+            FrontendSessionState::kInitializingVault) noexcept;
+
+    FrontendSessionState state() const noexcept;
+
+    void SetState(FrontendSessionState state) noexcept;
+
+    FrontendSessionState ApplyEvent(FrontendStateEvent event);
+
+    FrontendSessionState ApplyActionResult(
+        const FrontendActionResult& result) noexcept;
+
+    FrontendSessionState HandleStartup(bool vault_exists);
+
+    FrontendSessionState HandleCommand(FrontendCommandKind kind);
+
+    FrontendSessionState HandleConfirmationAccepted();
+
+    FrontendSessionState HandleFailure(bool session_unlocked);
+
+private:
+    FrontendSessionState state_;
+};
+
 enum class FrontendPayloadKind {
     kNone,
     kText,

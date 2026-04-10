@@ -278,6 +278,39 @@ void TestExplicitStateMachineTransitions() {
         "unsupported frontend state transition");
 }
 
+void TestFrontendStateMachine() {
+    FrontendStateMachine state_machine;
+    Require(state_machine.state() ==
+                FrontendSessionState::kInitializingVault,
+            "state machine should start in initializing state");
+
+    Require(state_machine.HandleStartup(true) ==
+                FrontendSessionState::kReady,
+            "startup handler should move existing vaults to ready");
+    Require(state_machine.HandleCommand(FrontendCommandKind::kUpdate) ==
+                FrontendSessionState::kConfirmingEntryOverwrite,
+            "command handler should enter overwrite confirmation");
+    Require(state_machine.HandleConfirmationAccepted() ==
+                FrontendSessionState::kEditingEntryForm,
+            "confirmation handler should advance to entry form");
+    Require(state_machine.HandleFailure(true) ==
+                FrontendSessionState::kReady,
+            "failure handler should recover to ready when session remains open");
+
+    state_machine.SetState(FrontendSessionState::kShowingHelp);
+    Require(state_machine.HandleCommand(FrontendCommandKind::kUnlock) ==
+                FrontendSessionState::kUnlockingSession,
+            "state machine should reuse shared transition table for unlock");
+    Require(state_machine.HandleFailure(false) ==
+                FrontendSessionState::kLocked,
+            "failure handler should recover to locked when session is absent");
+
+    const FrontendActionResult quit = BuildQuitResult();
+    Require(state_machine.ApplyActionResult(quit) ==
+                FrontendSessionState::kQuitRequested,
+            "state machine should also accept result-driven state sync");
+}
+
 void TestOutputFormatting() {
     Require(FormatStoredEntryMessage("data/email.zkv") ==
                 "saved to data/email.zkv",
@@ -479,6 +512,7 @@ int main() {
         TestConfirmationRules();
         TestSessionStateMapping();
         TestExplicitStateMachineTransitions();
+        TestFrontendStateMachine();
         TestOutputFormatting();
         TestActionResultsAndRendering();
         TestErrorClassification();

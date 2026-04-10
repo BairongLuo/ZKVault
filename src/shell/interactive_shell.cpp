@@ -231,10 +231,16 @@ FrontendActionResult BuildBrowseResult(const ShellBrowseState& state) {
         BrowseEmptyMessage(state));
 }
 
-VaultSession OpenOrInitializeSession(FrontendSessionState& state) {
-    state = ResolveStateTransition(
-        state,
-        ResolveStartupEvent(std::filesystem::exists(".zkv_master")));
+FrontendActionResult FinalizeShellResult(
+    FrontendStateMachine& state_machine,
+    FrontendActionResult result) {
+    static_cast<void>(state_machine.ApplyActionResult(result));
+    return result;
+}
+
+VaultSession OpenOrInitializeSession(FrontendStateMachine& state_machine) {
+    const FrontendSessionState state =
+        state_machine.HandleStartup(std::filesystem::exists(".zkv_master"));
     if (state == FrontendSessionState::kInitializingVault) {
         const std::string choice = ReadLine(
             "Vault not initialized. Create one now? [y/N]: ");
@@ -250,26 +256,28 @@ VaultSession OpenOrInitializeSession(FrontendSessionState& state) {
         };
         auto init_request_guard = MakeScopedCleanse(init_request);
         const InitializeVaultResult result = InitializeVault(init_request);
-        PrintFrontendResult(BuildInitializedResult(result.master_key_path));
-        state = FrontendSessionState::kReady;
+        FrontendActionResult initialized =
+            BuildInitializedResult(result.master_key_path);
+        static_cast<void>(state_machine.ApplyActionResult(initialized));
+        PrintFrontendResult(std::move(initialized));
         return VaultSession::Open(init_request.master_password);
     }
 
     std::string master_password = ReadSecret("Master password: ");
     auto master_password_guard = MakeScopedCleanse(master_password);
-    state = FrontendSessionState::kReady;
+    state_machine.SetState(FrontendSessionState::kReady);
     return VaultSession::Open(master_password);
 }
 
 FrontendActionResult ExecuteShellCommand(
     std::optional<VaultSession>& session,
     const FrontendCommand& command,
-    FrontendSessionState& state,
+    FrontendStateMachine& state_machine,
     ShellBrowseState& browse_state) {
-    state = ResolveStateTransition(state, ResolveCommandEvent(command.kind));
+    static_cast<void>(state_machine.HandleCommand(command.kind));
 
     if (command.kind == FrontendCommandKind::kHelp) {
-        return BuildShellHelpResult();
+        return FinalizeShellResult(state_machine, BuildShellHelpResult());
     }
 
     if (command.kind == FrontendCommandKind::kLock) {
@@ -280,7 +288,7 @@ FrontendActionResult ExecuteShellCommand(
         session.reset();
         ResetBrowseState(browse_state);
         ClearTerminalScreenIfInteractive();
-        return BuildLockedResult();
+        return FinalizeShellResult(state_machine, BuildLockedResult());
     }
 
     if (command.kind == FrontendCommandKind::kUnlock) {
@@ -292,11 +300,11 @@ FrontendActionResult ExecuteShellCommand(
         auto master_password_guard = MakeScopedCleanse(master_password);
         session.emplace(VaultSession::Open(master_password));
         ResetBrowseState(browse_state);
-        return BuildUnlockedResult();
+        return FinalizeShellResult(state_machine, BuildUnlockedResult());
     }
 
     if (command.kind == FrontendCommandKind::kQuit) {
-        return BuildQuitResult();
+        return FinalizeShellResult(state_machine, BuildQuitResult());
     }
 
     if (!session.has_value()) {
@@ -307,22 +315,22 @@ FrontendActionResult ExecuteShellCommand(
 
     if (command.kind == FrontendCommandKind::kList) {
         ActivateBrowseState(active_session, browse_state, "");
-        return BuildBrowseResult(browse_state);
+        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kFind) {
         ActivateBrowseState(active_session, browse_state, command.name);
-        return BuildBrowseResult(browse_state);
+        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kNext) {
         StepBrowseSelection(active_session, browse_state, true);
-        return BuildBrowseResult(browse_state);
+        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kPrev) {
         StepBrowseSelection(active_session, browse_state, false);
-        return BuildBrowseResult(browse_state);
+        return FinalizeShellResult(state_machine, BuildBrowseResult(browse_state));
     }
 
     if (command.kind == FrontendCommandKind::kShow) {
@@ -339,7 +347,9 @@ FrontendActionResult ExecuteShellCommand(
         PasswordEntry entry = active_session.LoadEntry(entry_name);
         auto entry_guard = MakeScopedCleanse(entry);
         FocusBrowseEntry(active_session, browse_state, entry_name);
-        return BuildShowEntryResult(std::move(entry));
+        return FinalizeShellResult(
+            state_machine,
+            BuildShowEntryResult(std::move(entry)));
     }
 
     if (command.kind == FrontendCommandKind::kAdd) {
@@ -354,7 +364,9 @@ FrontendActionResult ExecuteShellCommand(
         const StorePasswordEntryResult result = active_session.StoreEntry(request);
         RefreshBrowseState(active_session, browse_state);
         static_cast<void>(SelectBrowseEntry(browse_state, command.name));
-        return BuildStoredEntryResult(result.entry_path);
+        return FinalizeShellResult(
+            state_machine,
+            BuildStoredEntryResult(result.entry_path));
     }
 
     if (command.kind == FrontendCommandKind::kUpdate) {
@@ -364,9 +376,7 @@ FrontendActionResult ExecuteShellCommand(
             rule.prompt,
             rule.expected_value,
             rule.mismatch_error);
-        state = ResolveStateTransition(
-            state,
-            FrontendStateEvent::kConfirmationAccepted);
+        static_cast<void>(state_machine.HandleConfirmationAccepted());
         StorePasswordEntryRequest request{
             EntryMutationMode::kUpdate,
             command.name,
@@ -378,7 +388,9 @@ FrontendActionResult ExecuteShellCommand(
         const StorePasswordEntryResult result = active_session.StoreEntry(request);
         RefreshBrowseState(active_session, browse_state);
         static_cast<void>(SelectBrowseEntry(browse_state, command.name));
-        return BuildUpdatedResult(result.entry_path);
+        return FinalizeShellResult(
+            state_machine,
+            BuildUpdatedResult(result.entry_path));
     }
 
     if (command.kind == FrontendCommandKind::kDelete) {
@@ -388,13 +400,13 @@ FrontendActionResult ExecuteShellCommand(
             rule.prompt,
             rule.expected_value,
             rule.mismatch_error);
-        state = ResolveStateTransition(
-            state,
-            FrontendStateEvent::kConfirmationAccepted);
+        static_cast<void>(state_machine.HandleConfirmationAccepted());
         const RemovePasswordEntryResult result =
             active_session.RemoveEntry(command.name);
         RefreshBrowseState(active_session, browse_state);
-        return BuildDeletedEntryResult(result.entry_path);
+        return FinalizeShellResult(
+            state_machine,
+            BuildDeletedEntryResult(result.entry_path));
     }
 
     if (command.kind == FrontendCommandKind::kChangeMasterPassword) {
@@ -404,9 +416,7 @@ FrontendActionResult ExecuteShellCommand(
             rule.prompt,
             rule.expected_value,
             rule.mismatch_error);
-        state = ResolveStateTransition(
-            state,
-            FrontendStateEvent::kConfirmationAccepted);
+        static_cast<void>(state_machine.HandleConfirmationAccepted());
         std::string new_master_password = ReadConfirmedSecret(
             "New master password: ",
             "Confirm new master password: ",
@@ -415,7 +425,9 @@ FrontendActionResult ExecuteShellCommand(
         const RotateMasterPasswordResult result =
             active_session.RotateMasterPassword(new_master_password);
         RefreshBrowseState(active_session, browse_state);
-        return BuildUpdatedResult(result.master_key_path);
+        return FinalizeShellResult(
+            state_machine,
+            BuildUpdatedResult(result.master_key_path));
     }
 
     throw std::runtime_error("unknown shell command");
@@ -424,8 +436,8 @@ FrontendActionResult ExecuteShellCommand(
 }  // namespace
 
 int RunInteractiveShell() {
-    FrontendSessionState state = FrontendSessionState::kInitializingVault;
-    std::optional<VaultSession> session = OpenOrInitializeSession(state);
+    FrontendStateMachine state_machine;
+    std::optional<VaultSession> session = OpenOrInitializeSession(state_machine);
     ShellBrowseState browse_state;
     PrintFrontendResult(BuildShellReadyResult());
 
@@ -443,26 +455,18 @@ int RunInteractiveShell() {
         try {
             const FrontendCommand command = ParseShellCommand(line);
             FrontendActionResult result =
-                ExecuteShellCommand(session, command, state, browse_state);
-            state = result.state;
+                ExecuteShellCommand(session, command, state_machine, browse_state);
             PrintFrontendResult(std::move(result));
-            if (state == FrontendSessionState::kQuitRequested) {
+            if (state_machine.state() == FrontendSessionState::kQuitRequested) {
                 return 0;
             }
         } catch (const std::exception& ex) {
-            state = ResolveStateTransition(
-                state,
-                FrontendStateEvent::kOperationFailed);
             FrontendError error = ClassifyFrontendError(ex.what());
             std::string output = RenderFrontendError(error);
             auto error_guard = MakeScopedCleanse(error);
             auto output_guard = MakeScopedCleanse(output);
             std::cout << output << '\n';
-            state = ResolveStateTransition(
-                state,
-                session.has_value()
-                    ? FrontendStateEvent::kRecoveryCompletedWhileUnlocked
-                    : FrontendStateEvent::kRecoveryCompletedWhileLocked);
+            static_cast<void>(state_machine.HandleFailure(session.has_value()));
         }
     }
 }
