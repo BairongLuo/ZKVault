@@ -10,11 +10,14 @@
 enum class FrontendCommandKind {
     kHelp,
     kList,
+    kFind,
     kShow,
     kAdd,
     kUpdate,
     kDelete,
     kChangeMasterPassword,
+    kLock,
+    kUnlock,
     kQuit
 };
 
@@ -25,7 +28,9 @@ struct FrontendCommand {
 
 enum class FrontendSessionState {
     kInitializingVault,
+    kLocked,
     kReady,
+    kUnlockingSession,
     kEditingEntryForm,
     kEditingMasterPasswordForm,
     kConfirmingEntryOverwrite,
@@ -50,6 +55,7 @@ enum class FrontendErrorKind {
     kUnknownCommand,
     kConflict,
     kNotFound,
+    kLocked,
     kValidation,
     kConfirmationRejected,
     kInputCancelled,
@@ -120,6 +126,10 @@ FrontendActionResult BuildCliUsageResult();
 FrontendActionResult BuildShellReadyResult();
 
 FrontendActionResult BuildShellHelpResult();
+
+FrontendActionResult BuildLockedResult();
+
+FrontendActionResult BuildUnlockedResult();
 
 FrontendActionResult BuildListResult(
     std::vector<std::string> entry_names,

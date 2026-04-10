@@ -41,15 +41,23 @@ void TestCliUsageCommands() {
 
 void TestShellHelpCommands() {
     const auto& commands = ShellHelpCommands();
-    Require(commands.size() == 8, "shell help should expose 8 commands");
+    Require(commands.size() == 11, "shell help should expose 11 commands");
     Require(commands[0] == "help", "shell help should include help");
-    Require(commands[2] == "show <name>", "shell help should include show");
-    Require(commands[6] == "change-master-password",
+    Require(commands[2] == "find <term>", "shell help should include find");
+    Require(commands[3] == "show <name>", "shell help should include show");
+    Require(commands[7] == "change-master-password",
             "shell help should include rotation");
-    Require(commands[7] == "quit", "shell help should include quit");
+    Require(commands[8] == "lock", "shell help should include lock");
+    Require(commands[9] == "unlock", "shell help should include unlock");
+    Require(commands[10] == "quit", "shell help should include quit");
 }
 
 void TestShellCommandParsing() {
+    const FrontendCommand find = ParseShellCommand("find MAIL");
+    Require(find.kind == FrontendCommandKind::kFind,
+            "find command should parse as find");
+    Require(find.name == "MAIL", "find command should preserve search term");
+
     const FrontendCommand show = ParseShellCommand("show email");
     Require(show.kind == FrontendCommandKind::kShow,
             "show command should parse as show");
@@ -63,6 +71,14 @@ void TestShellCommandParsing() {
     const FrontendCommand quit = ParseShellCommand("exit");
     Require(quit.kind == FrontendCommandKind::kQuit,
             "exit should map to quit");
+
+    const FrontendCommand lock = ParseShellCommand("lock");
+    Require(lock.kind == FrontendCommandKind::kLock,
+            "lock should map to lock");
+
+    const FrontendCommand unlock = ParseShellCommand(" unlock ");
+    Require(unlock.kind == FrontendCommandKind::kUnlock,
+            "unlock should map to unlock");
 
     RequireThrows(
         [] { static_cast<void>(ParseShellCommand("update")); },
@@ -120,6 +136,15 @@ void TestSessionStateMapping() {
     Require(ResolveStartupState(true) == FrontendSessionState::kReady,
             "existing vault should map to ready state");
 
+    Require(ResolveCommandInputState(FrontendCommandKind::kLock) ==
+                FrontendSessionState::kLocked,
+            "lock should enter locked state");
+    Require(ResolveCommandInputState(FrontendCommandKind::kUnlock) ==
+                FrontendSessionState::kUnlockingSession,
+            "unlock should enter unlocking state");
+    Require(ResolveCommandInputState(FrontendCommandKind::kFind) ==
+                FrontendSessionState::kShowingList,
+            "find should reuse list state");
     Require(ResolveCommandInputState(FrontendCommandKind::kAdd) ==
                 FrontendSessionState::kEditingEntryForm,
             "add should enter editing state");
@@ -196,6 +221,24 @@ void TestActionResultsAndRendering() {
     Require(RenderFrontendActionResult(shell_help).find("show <name>") !=
                 std::string::npos,
             "shell help should render show command");
+    Require(RenderFrontendActionResult(shell_help).find("find <term>") !=
+                std::string::npos,
+            "shell help should render find command");
+    Require(RenderFrontendActionResult(shell_help).find("unlock") !=
+                std::string::npos,
+            "shell help should render unlock command");
+
+    const FrontendActionResult locked = BuildLockedResult();
+    Require(locked.state == FrontendSessionState::kLocked,
+            "locked result should map to locked state");
+    Require(RenderFrontendActionResult(locked) == "vault locked",
+            "locked result should render lock message");
+
+    const FrontendActionResult unlocked = BuildUnlockedResult();
+    Require(unlocked.state == FrontendSessionState::kReady,
+            "unlocked result should return to ready state");
+    Require(RenderFrontendActionResult(unlocked) == "vault unlocked",
+            "unlocked result should render unlock message");
 
     const FrontendActionResult listed_entries =
         BuildListResult(std::vector<std::string>{"bank", "email"}, "(empty)");
@@ -268,9 +311,15 @@ void TestErrorClassification() {
     Require(ClassifyFrontendError("entry does not exist").kind ==
                 FrontendErrorKind::kNotFound,
             "not-found errors should be classified");
+    Require(ClassifyFrontendError("vault is locked").kind ==
+                FrontendErrorKind::kLocked,
+            "locked errors should be classified");
     Require(ClassifyFrontendError("entry overwrite cancelled").kind ==
                 FrontendErrorKind::kConfirmationRejected,
             "confirmation errors should be classified");
+    Require(ClassifyFrontendError("vault is already unlocked").kind ==
+                FrontendErrorKind::kConflict,
+            "state conflicts should be classified");
     Require(ClassifyFrontendError("input cancelled").kind ==
                 FrontendErrorKind::kInputCancelled,
             "input cancellation should be classified");

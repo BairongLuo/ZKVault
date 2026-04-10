@@ -76,11 +76,14 @@ const std::vector<std::string>& ShellHelpCommands() {
     static const std::vector<std::string> kCommands = {
         "help",
         "list",
+        "find <term>",
         "show <name>",
         "add <name>",
         "update <name>",
         "delete <name>",
         "change-master-password",
+        "lock",
+        "unlock",
         "quit"
     };
 
@@ -103,6 +106,11 @@ FrontendCommand ParseShellCommand(const std::string& line) {
     if (command == "list") {
         RequireArgumentCount(parts, 1, "list");
         return FrontendCommand{FrontendCommandKind::kList, ""};
+    }
+
+    if (command == "find") {
+        RequireArgumentCount(parts, 2, "find <term>");
+        return FrontendCommand{FrontendCommandKind::kFind, parts[1]};
     }
 
     if (command == "show") {
@@ -130,6 +138,16 @@ FrontendCommand ParseShellCommand(const std::string& line) {
         return FrontendCommand{FrontendCommandKind::kChangeMasterPassword, ""};
     }
 
+    if (command == "lock") {
+        RequireArgumentCount(parts, 1, "lock");
+        return FrontendCommand{FrontendCommandKind::kLock, ""};
+    }
+
+    if (command == "unlock") {
+        RequireArgumentCount(parts, 1, "unlock");
+        return FrontendCommand{FrontendCommandKind::kUnlock, ""};
+    }
+
     if (command == "quit" || command == "exit") {
         RequireArgumentCount(parts, 1, "quit");
         return FrontendCommand{FrontendCommandKind::kQuit, ""};
@@ -151,6 +169,14 @@ FrontendSessionState ResolveStartupState(bool vault_exists) {
 }
 
 FrontendSessionState ResolveCommandInputState(FrontendCommandKind kind) {
+    if (kind == FrontendCommandKind::kLock) {
+        return FrontendSessionState::kLocked;
+    }
+
+    if (kind == FrontendCommandKind::kUnlock) {
+        return FrontendSessionState::kUnlockingSession;
+    }
+
     if (kind == FrontendCommandKind::kAdd) {
         return FrontendSessionState::kEditingEntryForm;
     }
@@ -172,6 +198,10 @@ FrontendSessionState ResolveCommandInputState(FrontendCommandKind kind) {
     }
 
     if (kind == FrontendCommandKind::kList) {
+        return FrontendSessionState::kShowingList;
+    }
+
+    if (kind == FrontendCommandKind::kFind) {
         return FrontendSessionState::kShowingList;
     }
 
@@ -253,6 +283,28 @@ FrontendActionResult BuildShellHelpResult() {
         FrontendSessionState::kShowingHelp,
         FrontendPayloadKind::kText,
         FormatCommandBlock("Commands:", ShellHelpCommands()),
+        "",
+        {},
+        {}
+    };
+}
+
+FrontendActionResult BuildLockedResult() {
+    return FrontendActionResult{
+        FrontendSessionState::kLocked,
+        FrontendPayloadKind::kText,
+        "vault locked",
+        "",
+        {},
+        {}
+    };
+}
+
+FrontendActionResult BuildUnlockedResult() {
+    return FrontendActionResult{
+        FrontendSessionState::kReady,
+        FrontendPayloadKind::kText,
+        "vault unlocked",
         "",
         {},
         {}
@@ -359,6 +411,10 @@ FrontendError ClassifyFrontendError(std::string_view message) {
         return FrontendError{FrontendErrorKind::kNotFound, std::string(message)};
     }
 
+    if (message == "vault is locked") {
+        return FrontendError{FrontendErrorKind::kLocked, std::string(message)};
+    }
+
     if (message == "entry overwrite cancelled" ||
         message == "entry deletion cancelled" ||
         message == "master password rotation cancelled") {
@@ -377,11 +433,18 @@ FrontendError ClassifyFrontendError(std::string_view message) {
 
     if (message == "master passwords do not match" ||
         message == "new master passwords do not match" ||
+        message == "entry name must not be empty" ||
+        message == "entry name must not be '.' or '..'" ||
         message == "entry name may only contain letters, digits, '.', '-' and '_'") {
         return FrontendError{
             FrontendErrorKind::kValidation,
             std::string(message)
         };
+    }
+
+    if (message == "vault is already locked" ||
+        message == "vault is already unlocked") {
+        return FrontendError{FrontendErrorKind::kConflict, std::string(message)};
     }
 
     if (message == "AES-256-GCM decryption failed") {

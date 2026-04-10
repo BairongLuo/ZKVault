@@ -87,6 +87,9 @@ assert_contains "$OLD_PASSWORD_OUTPUT" "error: AES-256-GCM decryption failed"
 NEW_PASSWORD_OUTPUT="$(run_ok $'new-master-password\n\n   \nhelp\nquit\n' shell)"
 assert_contains "$NEW_PASSWORD_OUTPUT" "shell ready; type help for commands"
 assert_contains "$NEW_PASSWORD_OUTPUT" "Commands:"
+assert_contains "$NEW_PASSWORD_OUTPUT" "find <term>"
+assert_contains "$NEW_PASSWORD_OUTPUT" "lock"
+assert_contains "$NEW_PASSWORD_OUTPUT" "unlock"
 
 SHELL_CANCELLED_INPUT_OUTPUT="$(run_ok $'new-master-password\nadd email\n' shell)"
 assert_contains "$SHELL_CANCELLED_INPUT_OUTPUT" "error: input cancelled"
@@ -103,3 +106,19 @@ assert_contains "$SHELL_CONFIRM_CANCEL_OUTPUT" "error: input cancelled"
 SHELL_REPEAT_CONFIRMATION_OUTPUT="$(run_ok $'new-master-password\nupdate email\nwrong-name\nupdate email\nstill-wrong\nshow email\nquit\n' shell)"
 assert_occurrences "$SHELL_REPEAT_CONFIRMATION_OUTPUT" "error: entry overwrite cancelled" 2
 assert_contains "$SHELL_REPEAT_CONFIRMATION_OUTPUT" '"password": "recovery-password"'
+
+SHELL_FIND_OUTPUT="$(run_ok $'new-master-password\nfind MAIL\nfind bank\nquit\n' shell)"
+assert_contains "$SHELL_FIND_OUTPUT" "email"
+assert_contains "$SHELL_FIND_OUTPUT" "(no matches)"
+
+SHELL_LOCK_UNLOCK_OUTPUT="$(run_ok $'new-master-password\nlock\nshow email\nunlock\nnew-master-password\nshow email\nquit\n' shell)"
+assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "vault locked"
+assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "error: vault is locked"
+assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" "vault unlocked"
+assert_contains "$SHELL_LOCK_UNLOCK_OUTPUT" '"password": "recovery-password"'
+
+SHELL_LOCK_STATE_CONFLICT_OUTPUT="$(run_ok $'new-master-password\nlock\nlock\nunlock\nnew-master-password\nunlock\nquit\n' shell)"
+assert_contains "$SHELL_LOCK_STATE_CONFLICT_OUTPUT" "vault locked"
+assert_contains "$SHELL_LOCK_STATE_CONFLICT_OUTPUT" "error: vault is already locked"
+assert_contains "$SHELL_LOCK_STATE_CONFLICT_OUTPUT" "vault unlocked"
+assert_contains "$SHELL_LOCK_STATE_CONFLICT_OUTPUT" "error: vault is already unlocked"
