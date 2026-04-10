@@ -75,6 +75,14 @@ void TestShellCommandParsing() {
         "unknown shell command");
 }
 
+void TestBlankShellInput() {
+    Require(IsBlankShellInput(""), "empty shell input should be blank");
+    Require(IsBlankShellInput("  \t \r\n"),
+            "whitespace-only shell input should be blank");
+    Require(!IsBlankShellInput("list"),
+            "non-empty command should not be blank");
+}
+
 void TestConfirmationRules() {
     const ExactConfirmationRule overwrite =
         BuildOverwriteConfirmationRule("email");
@@ -113,18 +121,18 @@ void TestSessionStateMapping() {
             "existing vault should map to ready state");
 
     Require(ResolveCommandInputState(FrontendCommandKind::kAdd) ==
-                FrontendSessionState::kEditingEntry,
+                FrontendSessionState::kEditingEntryForm,
             "add should enter editing state");
     Require(ResolveCommandInputState(FrontendCommandKind::kUpdate) ==
-                FrontendSessionState::kAwaitingConfirmation,
-            "update should enter confirmation state first");
+                FrontendSessionState::kConfirmingEntryOverwrite,
+            "update should enter overwrite confirmation state first");
     Require(ResolveCommandInputState(FrontendCommandKind::kDelete) ==
-                FrontendSessionState::kAwaitingConfirmation,
-            "delete should enter confirmation state");
+                FrontendSessionState::kConfirmingEntryDeletion,
+            "delete should enter deletion confirmation state");
     Require(ResolveCommandInputState(
                 FrontendCommandKind::kChangeMasterPassword) ==
-                FrontendSessionState::kAwaitingConfirmation,
-            "rotation should enter confirmation state");
+                FrontendSessionState::kConfirmingMasterPasswordRotation,
+            "rotation should enter master password confirmation state");
     Require(ResolveCommandInputState(FrontendCommandKind::kList) ==
                 FrontendSessionState::kShowingList,
             "list should map to list state");
@@ -137,6 +145,17 @@ void TestSessionStateMapping() {
     Require(ResolveCommandInputState(FrontendCommandKind::kQuit) ==
                 FrontendSessionState::kQuitRequested,
             "quit should map to quit state");
+
+    Require(ResolvePostConfirmationState(FrontendCommandKind::kUpdate) ==
+                FrontendSessionState::kEditingEntryForm,
+            "confirmed update should continue into entry form state");
+    Require(ResolvePostConfirmationState(
+                FrontendCommandKind::kChangeMasterPassword) ==
+                FrontendSessionState::kEditingMasterPasswordForm,
+            "confirmed rotation should continue into master password form state");
+    Require(ResolvePostConfirmationState(FrontendCommandKind::kDelete) ==
+                FrontendSessionState::kReady,
+            "confirmed delete should return to ready state");
 }
 
 void TestOutputFormatting() {
@@ -281,6 +300,7 @@ int main() {
         TestCliUsageCommands();
         TestShellHelpCommands();
         TestShellCommandParsing();
+        TestBlankShellInput();
         TestConfirmationRules();
         TestSessionStateMapping();
         TestOutputFormatting();

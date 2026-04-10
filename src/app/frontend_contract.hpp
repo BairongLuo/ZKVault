@@ -26,12 +26,15 @@ struct FrontendCommand {
 enum class FrontendSessionState {
     kInitializingVault,
     kReady,
-    kEditingEntry,
-    kAwaitingConfirmation,
+    kEditingEntryForm,
+    kEditingMasterPasswordForm,
+    kConfirmingEntryOverwrite,
+    kConfirmingEntryDeletion,
+    kConfirmingMasterPasswordRotation,
     kShowingHelp,
     kShowingList,
     kShowingEntry,
-    kFailed,
+    kRecoveringFromFailure,
     kQuitRequested
 };
 
@@ -98,9 +101,13 @@ const std::vector<std::string>& ShellHelpCommands();
 
 FrontendCommand ParseShellCommand(const std::string& line);
 
+bool IsBlankShellInput(std::string_view line);
+
 FrontendSessionState ResolveStartupState(bool vault_exists);
 
 FrontendSessionState ResolveCommandInputState(FrontendCommandKind kind);
+
+FrontendSessionState ResolvePostConfirmationState(FrontendCommandKind kind);
 
 ExactConfirmationRule BuildOverwriteConfirmationRule(const std::string& name);
 

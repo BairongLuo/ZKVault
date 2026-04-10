@@ -92,7 +92,7 @@ FrontendActionResult ExecuteShellCommand(
             rule.prompt,
             rule.expected_value,
             rule.mismatch_error);
-        state = FrontendSessionState::kEditingEntry;
+        state = ResolvePostConfirmationState(command.kind);
         StorePasswordEntryRequest request{
             EntryMutationMode::kUpdate,
             command.name,
@@ -123,7 +123,7 @@ FrontendActionResult ExecuteShellCommand(
             rule.prompt,
             rule.expected_value,
             rule.mismatch_error);
-        state = FrontendSessionState::kEditingEntry;
+        state = ResolvePostConfirmationState(command.kind);
         std::string new_master_password = ReadConfirmedSecret(
             "New master password: ",
             "Confirm new master password: ",
@@ -155,7 +155,7 @@ int RunInteractiveShell() {
             return 0;
         }
 
-        if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
+        if (IsBlankShellInput(line)) {
             continue;
         }
 
@@ -168,7 +168,7 @@ int RunInteractiveShell() {
                 return 0;
             }
         } catch (const std::exception& ex) {
-            state = FrontendSessionState::kFailed;
+            state = FrontendSessionState::kRecoveringFromFailure;
             FrontendError error = ClassifyFrontendError(ex.what());
             std::string output = RenderFrontendError(error);
             auto error_guard = MakeScopedCleanse(error);

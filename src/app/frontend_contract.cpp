@@ -138,6 +138,10 @@ FrontendCommand ParseShellCommand(const std::string& line) {
     throw std::runtime_error("unknown shell command");
 }
 
+bool IsBlankShellInput(std::string_view line) {
+    return line.find_first_not_of(" \t\r\n") == std::string_view::npos;
+}
+
 FrontendSessionState ResolveStartupState(bool vault_exists) {
     if (!vault_exists) {
         return FrontendSessionState::kInitializingVault;
@@ -148,13 +152,19 @@ FrontendSessionState ResolveStartupState(bool vault_exists) {
 
 FrontendSessionState ResolveCommandInputState(FrontendCommandKind kind) {
     if (kind == FrontendCommandKind::kAdd) {
-        return FrontendSessionState::kEditingEntry;
+        return FrontendSessionState::kEditingEntryForm;
     }
 
-    if (kind == FrontendCommandKind::kUpdate ||
-        kind == FrontendCommandKind::kDelete ||
-        kind == FrontendCommandKind::kChangeMasterPassword) {
-        return FrontendSessionState::kAwaitingConfirmation;
+    if (kind == FrontendCommandKind::kUpdate) {
+        return FrontendSessionState::kConfirmingEntryOverwrite;
+    }
+
+    if (kind == FrontendCommandKind::kDelete) {
+        return FrontendSessionState::kConfirmingEntryDeletion;
+    }
+
+    if (kind == FrontendCommandKind::kChangeMasterPassword) {
+        return FrontendSessionState::kConfirmingMasterPasswordRotation;
     }
 
     if (kind == FrontendCommandKind::kHelp) {
@@ -174,6 +184,22 @@ FrontendSessionState ResolveCommandInputState(FrontendCommandKind kind) {
     }
 
     return FrontendSessionState::kReady;
+}
+
+FrontendSessionState ResolvePostConfirmationState(FrontendCommandKind kind) {
+    if (kind == FrontendCommandKind::kUpdate) {
+        return FrontendSessionState::kEditingEntryForm;
+    }
+
+    if (kind == FrontendCommandKind::kChangeMasterPassword) {
+        return FrontendSessionState::kEditingMasterPasswordForm;
+    }
+
+    if (kind == FrontendCommandKind::kDelete) {
+        return FrontendSessionState::kReady;
+    }
+
+    return ResolveCommandInputState(kind);
 }
 
 ExactConfirmationRule BuildOverwriteConfirmationRule(const std::string& name) {

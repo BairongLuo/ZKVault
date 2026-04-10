@@ -23,6 +23,22 @@ assert_contains() {
     fi
 }
 
+assert_occurrences() {
+    local haystack="$1"
+    local needle="$2"
+    local expected="$3"
+    local actual
+
+    actual="$(printf '%s' "$haystack" | grep -F -o "$needle" | wc -l | tr -d '[:space:]')"
+    if [[ "$actual" != "$expected" ]]; then
+        echo "expected $expected occurrences of: $needle" >&2
+        echo "actual occurrences: $actual" >&2
+        echo "actual output:" >&2
+        printf '%s\n' "$haystack" >&2
+        exit 1
+    fi
+}
+
 run_ok() {
     local input="$1"
     shift
@@ -68,7 +84,7 @@ assert_contains "$SHELL_WORKFLOW_OUTPUT" "(empty)"
 OLD_PASSWORD_OUTPUT="$(run_fail $'test-master-password\n' shell)"
 assert_contains "$OLD_PASSWORD_OUTPUT" "error: AES-256-GCM decryption failed"
 
-NEW_PASSWORD_OUTPUT="$(run_ok $'new-master-password\nhelp\nquit\n' shell)"
+NEW_PASSWORD_OUTPUT="$(run_ok $'new-master-password\n\n   \nhelp\nquit\n' shell)"
 assert_contains "$NEW_PASSWORD_OUTPUT" "shell ready; type help for commands"
 assert_contains "$NEW_PASSWORD_OUTPUT" "Commands:"
 
@@ -80,3 +96,10 @@ SHELL_RECOVERY_OUTPUT="$(run_ok $'new-master-password\nadd email\nrecovery-passw
 assert_contains "$SHELL_RECOVERY_OUTPUT" "saved to data/email.zkv"
 assert_contains "$SHELL_RECOVERY_OUTPUT" "error: entry overwrite cancelled"
 assert_contains "$SHELL_RECOVERY_OUTPUT" '"password": "recovery-password"'
+
+SHELL_CONFIRM_CANCEL_OUTPUT="$(run_ok $'new-master-password\nupdate email\n' shell)"
+assert_contains "$SHELL_CONFIRM_CANCEL_OUTPUT" "error: input cancelled"
+
+SHELL_REPEAT_CONFIRMATION_OUTPUT="$(run_ok $'new-master-password\nupdate email\nwrong-name\nupdate email\nstill-wrong\nshow email\nquit\n' shell)"
+assert_occurrences "$SHELL_REPEAT_CONFIRMATION_OUTPUT" "error: entry overwrite cancelled" 2
+assert_contains "$SHELL_REPEAT_CONFIRMATION_OUTPUT" '"password": "recovery-password"'
