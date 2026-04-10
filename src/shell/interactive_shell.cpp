@@ -1,5 +1,8 @@
 #include "shell/interactive_shell.hpp"
 
+#include <charconv>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -18,6 +21,9 @@
 #include "terminal/prompt.hpp"
 
 namespace {
+
+constexpr const char* kShellIdleTimeoutEnv =
+    "ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS";
 
 void PrintFrontendResult(FrontendActionResult result) {
     auto result_guard = MakeScopedCleanse(result);
@@ -238,6 +244,51 @@ FrontendActionResult FinalizeShellResult(
     return result;
 }
 
+std::optional<std::chrono::milliseconds> ReadShellIdleTimeout() {
+    const char* raw_value = std::getenv(kShellIdleTimeoutEnv);
+    if (raw_value == nullptr || *raw_value == '\0') {
+        return std::nullopt;
+    }
+
+    int seconds = 0;
+    const char* parse_end = raw_value + std::char_traits<char>::length(raw_value);
+    const auto [end, error] = std::from_chars(raw_value, parse_end, seconds);
+    if (error != std::errc() || end != parse_end || seconds <= 0) {
+        throw std::runtime_error(
+            "invalid ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS");
+    }
+
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::seconds(seconds));
+}
+
+PromptReadStatus ReadShellCommandLine(
+    const std::optional<std::chrono::milliseconds>& idle_timeout,
+    bool session_unlocked,
+    std::string& line) {
+    if (session_unlocked && idle_timeout.has_value()) {
+        return TryReadLineWithTimeout("zkvault> ", line, *idle_timeout);
+    }
+
+    return TryReadLine("zkvault> ", line) ? PromptReadStatus::kRead
+                                          : PromptReadStatus::kEof;
+}
+
+FrontendActionResult HandleIdleTimeout(
+    std::optional<VaultSession>& session,
+    FrontendStateMachine& state_machine,
+    ShellBrowseState& browse_state) {
+    if (!session.has_value()) {
+        return FinalizeShellResult(state_machine, BuildLockedResult());
+    }
+
+    static_cast<void>(state_machine.HandleIdleTimeout());
+    session.reset();
+    ResetBrowseState(browse_state);
+    ClearTerminalScreenIfInteractive();
+    return FinalizeShellResult(state_machine, BuildIdleLockedResult());
+}
+
 VaultSession OpenOrInitializeSession(FrontendStateMachine& state_machine) {
     const FrontendSessionState state =
         state_machine.HandleStartup(std::filesystem::exists(".zkv_master"));
@@ -439,11 +490,23 @@ int RunInteractiveShell() {
     FrontendStateMachine state_machine;
     std::optional<VaultSession> session = OpenOrInitializeSession(state_machine);
     ShellBrowseState browse_state;
+    const std::optional<std::chrono::milliseconds> idle_timeout =
+        ReadShellIdleTimeout();
     PrintFrontendResult(BuildShellReadyResult());
 
     std::string line;
     while (true) {
-        if (!TryReadLine("zkvault> ", line)) {
+        const PromptReadStatus read_status =
+            ReadShellCommandLine(idle_timeout, session.has_value(), line);
+        if (read_status == PromptReadStatus::kTimedOut) {
+            Cleanse(line);
+            line.clear();
+            PrintFrontendResult(
+                HandleIdleTimeout(session, state_machine, browse_state));
+            continue;
+        }
+
+        if (read_status == PromptReadStatus::kEof) {
             std::cout << '\n';
             return 0;
         }

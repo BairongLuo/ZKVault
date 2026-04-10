@@ -299,6 +299,11 @@ const std::vector<FrontendStateTransition>& FrontendStateTransitions() {
         AppendTransitions(
             transitions,
             interactive_states,
+            FrontendStateEvent::kIdleTimeoutElapsed,
+            FrontendSessionState::kLocked);
+        AppendTransitions(
+            transitions,
+            interactive_states,
             FrontendStateEvent::kUnlockRequested,
             FrontendSessionState::kUnlockingSession);
         AppendTransitions(
@@ -463,6 +468,10 @@ FrontendSessionState FrontendStateMachine::HandleCommand(FrontendCommandKind kin
     return ApplyEvent(ResolveCommandEvent(kind));
 }
 
+FrontendSessionState FrontendStateMachine::HandleIdleTimeout() {
+    return ApplyEvent(FrontendStateEvent::kIdleTimeoutElapsed);
+}
+
 FrontendSessionState FrontendStateMachine::HandleConfirmationAccepted() {
     return ApplyEvent(FrontendStateEvent::kConfirmationAccepted);
 }
@@ -563,6 +572,18 @@ FrontendActionResult BuildLockedResult() {
         FrontendSessionState::kLocked,
         FrontendPayloadKind::kText,
         "vault locked",
+        "",
+        {},
+        {},
+        {}
+    };
+}
+
+FrontendActionResult BuildIdleLockedResult() {
+    return FrontendActionResult{
+        FrontendSessionState::kLocked,
+        FrontendPayloadKind::kText,
+        "vault locked due to inactivity",
         "",
         {},
         {},
@@ -735,6 +756,7 @@ FrontendError ClassifyFrontendError(std::string_view message) {
 
     if (message == "master passwords do not match" ||
         message == "new master passwords do not match" ||
+        message == "invalid ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS" ||
         message == "entry name must not be empty" ||
         message == "entry name must not be '.' or '..'" ||
         message == "entry name may only contain letters, digits, '.', '-' and '_'") {

@@ -178,6 +178,25 @@ std::pair<std::string, std::string> RunLineInput(std::string_view input) {
     });
 }
 
+std::pair<PromptReadStatus, std::string> RunTimedLineInput(
+    std::chrono::milliseconds timeout) {
+    int master_fd = -1;
+    int slave_fd = -1;
+    if (::openpty(&master_fd, &slave_fd, nullptr, nullptr, nullptr) != 0) {
+        throw std::runtime_error("failed to open pseudo-terminal");
+    }
+
+    ScopedFd master(master_fd);
+    ScopedFd slave(slave_fd);
+    ScopedFdRedirect redirect_stdin(STDIN_FILENO, slave.Get());
+    ScopedFdRedirect redirect_stdout(STDOUT_FILENO, slave.Get());
+
+    std::string value;
+    const PromptReadStatus status =
+        TryReadLineWithTimeout("Value: ", value, timeout);
+    return {status, ReadAvailable(master.Get())};
+}
+
 std::pair<std::string, std::string> RunPromptFailure(
     std::string_view input,
     const std::function<void()>& reader) {
@@ -283,6 +302,15 @@ void TestLineEofCancellation() {
             "line EOF should still show the prompt");
 }
 
+void TestLineTimeout() {
+    const auto [status, terminal_output] =
+        RunTimedLineInput(std::chrono::milliseconds(20));
+    Require(status == PromptReadStatus::kTimedOut,
+            "timed line input should report timeout");
+    Require(terminal_output.find("Value: ") != std::string::npos,
+            "timed line input should still show the prompt");
+}
+
 }  // namespace
 
 int main() {
@@ -293,6 +321,7 @@ int main() {
         TestLineDeleteHandling();
         TestSecretEofCancellation();
         TestLineEofCancellation();
+        TestLineTimeout();
         return 0;
     } catch (const std::exception& ex) {
         return (std::fprintf(stderr, "prompt backspace test failed: %s\n", ex.what()), 1);

@@ -59,6 +59,7 @@ enum class FrontendStateEvent {
     kDeleteRequested,
     kMasterPasswordRotationRequested,
     kLockRequested,
+    kIdleTimeoutElapsed,
     kUnlockRequested,
     kQuitRequested,
     kConfirmationAccepted,
@@ -93,6 +94,8 @@ public:
     FrontendSessionState HandleStartup(bool vault_exists);
 
     FrontendSessionState HandleCommand(FrontendCommandKind kind);
+
+    FrontendSessionState HandleIdleTimeout();
 
     FrontendSessionState HandleConfirmationAccepted();
 
@@ -213,6 +216,8 @@ FrontendActionResult BuildShellReadyResult();
 FrontendActionResult BuildShellHelpResult();
 
 FrontendActionResult BuildLockedResult();
+
+FrontendActionResult BuildIdleLockedResult();
 
 FrontendActionResult BuildUnlockedResult();
 

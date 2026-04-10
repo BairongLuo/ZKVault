@@ -1,10 +1,22 @@
 #pragma once
 
+#include <chrono>
 #include <string>
+
+enum class PromptReadStatus {
+    kRead,
+    kEof,
+    kTimedOut
+};
 
 std::string ReadSecret(const std::string& prompt);
 
 bool TryReadLine(const std::string& prompt, std::string& value);
+
+PromptReadStatus TryReadLineWithTimeout(
+    const std::string& prompt,
+    std::string& value,
+    std::chrono::milliseconds timeout);
 
 std::string ReadLine(const std::string& prompt);
 

@@ -54,6 +54,10 @@ if(BUILD_TESTING)
         src/terminal/display.cpp
     )
 
+    add_executable(zkvault_shell_idle_lock
+        tests/shell_idle_lock_test.cpp
+    )
+
     add_executable(zkvault_frontend_contract
         tests/frontend_contract_test.cpp
     )
@@ -61,6 +65,7 @@ if(BUILD_TESTING)
     target_link_libraries(zkvault_app_contract PRIVATE zkvault_core)
     target_link_libraries(zkvault_frontend_contract PRIVATE zkvault_core)
     target_link_libraries(zkvault_prompt_backspace PRIVATE zkvault_core util)
+    target_link_libraries(zkvault_shell_idle_lock PRIVATE util)
     target_link_libraries(zkvault_terminal_display PRIVATE util)
     target_include_directories(zkvault_terminal_display PRIVATE
         src
@@ -89,6 +94,10 @@ if(BUILD_TESTING)
     add_test(
         NAME zkvault_terminal_display
         COMMAND $<TARGET_FILE:zkvault_terminal_display>
+    )
+    add_test(
+        NAME zkvault_shell_idle_lock
+        COMMAND $<TARGET_FILE:zkvault_shell_idle_lock> $<TARGET_FILE:zkvault>
     )
     add_test(
         NAME zkvault_frontend_contract

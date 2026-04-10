@@ -1,7 +1,10 @@
 #include "terminal/prompt.hpp"
 
+#include <chrono>
 #include <cerrno>
 #include <iostream>
+#include <optional>
+#include <poll.h>
 #include <stdexcept>
 #include <string>
 #include <termios.h>
@@ -20,7 +23,7 @@ enum class InputEchoMode {
 
 struct InteractiveInputResult {
     std::string value;
-    bool reached_eof = false;
+    PromptReadStatus status = PromptReadStatus::kRead;
 };
 
 class ScopedTerminalSettings {
@@ -97,7 +100,9 @@ void EraseInputCharacter(InputEchoMode echo_mode, const std::string& value) {
     EraseEchoedCharacter();
 }
 
-InteractiveInputResult ReadInteractiveInputFromTerminal(InputEchoMode echo_mode) {
+InteractiveInputResult ReadInteractiveInputFromTerminal(
+    InputEchoMode echo_mode,
+    std::optional<std::chrono::milliseconds> timeout) {
     termios old_settings{};
     if (tcgetattr(STDIN_FILENO, &old_settings) != 0) {
         throw std::runtime_error("failed to read terminal settings");
@@ -128,6 +133,30 @@ InteractiveInputResult ReadInteractiveInputFromTerminal(InputEchoMode echo_mode)
 
     std::string value;
     while (true) {
+        if (timeout.has_value()) {
+            pollfd read_fd{
+                STDIN_FILENO,
+                POLLIN,
+                0
+            };
+            int poll_result = 0;
+            do {
+                poll_result = ::poll(
+                    &read_fd,
+                    1,
+                    static_cast<int>(timeout->count()));
+            } while (poll_result < 0 && errno == EINTR);
+
+            if (poll_result < 0) {
+                throw std::runtime_error("failed to wait for terminal input");
+            }
+
+            if (poll_result == 0) {
+                std::cout << '\n';
+                return {std::move(value), PromptReadStatus::kTimedOut};
+            }
+        }
+
         unsigned char ch = 0;
         const ssize_t bytes_read = ::read(STDIN_FILENO, &ch, 1);
         if (bytes_read < 0) {
@@ -141,10 +170,10 @@ InteractiveInputResult ReadInteractiveInputFromTerminal(InputEchoMode echo_mode)
         if (bytes_read == 0) {
             if (!value.empty()) {
                 std::cout << '\n';
-                return {std::move(value), false};
+                return {std::move(value), PromptReadStatus::kRead};
             }
 
-            return {std::move(value), true};
+            return {std::move(value), PromptReadStatus::kEof};
         }
 
         if (ch == '\n' || ch == '\r') {
@@ -156,7 +185,11 @@ InteractiveInputResult ReadInteractiveInputFromTerminal(InputEchoMode echo_mode)
             if (!value.empty()) {
                 std::cout << '\n';
             }
-            return {std::move(value), value.empty()};
+            return {
+                std::move(value),
+                value.empty() ? PromptReadStatus::kEof
+                              : PromptReadStatus::kRead
+            };
         }
 
         if (ch == '\b' || ch == 127) {
@@ -170,7 +203,7 @@ InteractiveInputResult ReadInteractiveInputFromTerminal(InputEchoMode echo_mode)
     }
 
     restore_settings.Restore();
-    return {std::move(value), false};
+    return {std::move(value), PromptReadStatus::kRead};
 }
 
 }  // namespace
@@ -189,8 +222,8 @@ std::string ReadSecret(const std::string& prompt) {
     }
 
     const InteractiveInputResult result =
-        ReadInteractiveInputFromTerminal(InputEchoMode::kMasked);
-    if (result.reached_eof) {
+        ReadInteractiveInputFromTerminal(InputEchoMode::kMasked, std::nullopt);
+    if (result.status == PromptReadStatus::kEof) {
         std::cout << '\n';
         throw std::runtime_error(kInputCancelledMessage);
     }
@@ -199,23 +232,36 @@ std::string ReadSecret(const std::string& prompt) {
 }
 
 bool TryReadLine(const std::string& prompt, std::string& value) {
+    return TryReadLineWithTimeout(prompt, value, std::chrono::milliseconds(0)) ==
+           PromptReadStatus::kRead;
+}
+
+PromptReadStatus TryReadLineWithTimeout(
+    const std::string& prompt,
+    std::string& value,
+    std::chrono::milliseconds timeout) {
     std::cout << prompt;
     std::cout.flush();
 
     if (!isatty(STDIN_FILENO)) {
-        return static_cast<bool>(std::getline(std::cin, value));
+        return std::getline(std::cin, value)
+                   ? PromptReadStatus::kRead
+                   : PromptReadStatus::kEof;
     }
 
     const InteractiveInputResult result =
-        ReadInteractiveInputFromTerminal(InputEchoMode::kVisible);
+        ReadInteractiveInputFromTerminal(
+            InputEchoMode::kVisible,
+            timeout.count() > 0 ? std::optional(timeout) : std::nullopt);
     value = result.value;
-    return !result.reached_eof;
+    return result.status;
 }
 
 std::string ReadLine(const std::string& prompt) {
     std::string value;
-    const bool read_success = TryReadLine(prompt, value);
-    if (!read_success) {
+    const PromptReadStatus read_status =
+        TryReadLineWithTimeout(prompt, value, std::chrono::milliseconds(0));
+    if (read_status != PromptReadStatus::kRead) {
         if (isatty(STDIN_FILENO)) {
             std::cout << '\n';
         }

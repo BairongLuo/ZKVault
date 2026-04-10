@@ -114,6 +114,7 @@ zkvault list
 - 直接运行 `./build/zkvault` 时，默认仍然是命令式 CLI 入口，不会自动进入 `shell`
 - 只有显式执行 `./build/zkvault shell` 时，才会进入当前的会话式终端前端原型
 - `shell` 提示符、确认输入和备注输入已统一走终端输入层处理，退格时不会再在屏幕上回显 `^H`
+- 若设置 `ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS=<正整数>`，会话会在主提示符空闲超时后自动锁定并清屏
 
 当前 CLI 与 `shell` 已进一步共享同一套前端契约定义，集中收敛以下内容：
 
@@ -273,6 +274,12 @@ ctest --test-dir build --output-on-failure
 - 轮换后旧密码失效、新密码可继续进入会话
 - 锁屏后浏览焦点清空，解锁后必须重新建立上下文
 
+`zkvault_shell_idle_lock` 使用 pseudo-terminal 验证会话空闲保护，覆盖以下场景：
+
+- 主提示符空闲超时后自动锁定
+- 自动锁定时清屏，减少敏感内容停留在终端中的时间
+- 自动锁定后仍可手动解锁并继续会话
+
 `zkvault_app_contract` 直接调用 `src/app/` 暴露的接入边界，不经过 CLI 提示词解析，覆盖以下契约：
 
 - 保险库初始化与重复初始化拒绝
@@ -298,6 +305,7 @@ ctest --test-dir build --output-on-failure
 - 密码输入下 `Delete` 不会回显为 `^?`
 - 密码输入下删除键会正确移除前一个密码字符
 - 可见输入下 `Backspace` / `Delete` 同样不会回显控制字符
+- 主提示符支持超时读取，超时后可返回上层执行空闲锁定逻辑
 
 也可直接执行：
 
@@ -316,13 +324,14 @@ bash tests/cli_smoke_test.sh ./build/zkvault
 
 ## 本次改动
 
-本轮提交继续推进“阶段二：终端接入层标准化”。在上一轮已经把列表浏览上下文跑通之后，这次进一步把 shell/未来 TUI 需要的状态推进逻辑真正组织成显式状态机与转移表，并继续封装成可直接被前端持有的状态机对象，避免状态变化继续散落在各个命令分支里。
+本轮提交继续推进“阶段二：终端接入层标准化”。在上一轮已经把列表浏览上下文跑通之后，这次进一步把 shell/未来 TUI 需要的状态推进逻辑真正组织成显式状态机与转移表，并继续封装成可直接被前端持有的状态机对象；同时补上空闲自动锁定这一条真正面向安全的会话保护路径。
 
 - 在 `src/app/frontend_contract.*` 中新增前端状态事件、共享状态转移表以及统一的 `ResolveStateTransition(...)` 入口，覆盖启动、命令进入、确认通过、失败恢复等关键跃迁
 - 保留既有 `ResolveStartupState`、`ResolveCommandInputState`、`ResolvePostConfirmationState` 作为兼容包装，但它们现在都复用同一套状态机，不再各自手写映射分支
 - 新增 `FrontendStateMachine`，把“当前状态 + 事件推进 + 失败恢复”收敛成一个可复用对象，便于未来 TUI 直接持有和驱动
 - `src/shell/interactive_shell.cpp` 改为直接持有并消费共享状态机对象，统一处理命令进入、确认通过、动作结果落地和恢复完成四类状态推进
-- 扩展 `zkvault_frontend_contract`，固化显式转移表与状态机对象的关键路径，包括锁定态下查看帮助、帮助态发起解锁、确认通过、失败进入恢复态以及恢复后返回 `ready/locked`
+- `src/terminal/prompt.*` 新增带超时的命令行读取能力；设置 `ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS` 后，shell 会在主提示符空闲超时后自动锁定并清屏
+- 扩展 `zkvault_frontend_contract`、`zkvault_prompt_backspace` 与新的 `zkvault_shell_idle_lock`，固化显式转移表、状态机对象以及空闲自动锁定路径，包括锁定态下查看帮助、帮助态发起解锁、确认通过、失败进入恢复态、主提示符读取超时以及超时后返回 `locked`
 
 这次改动后，当前终端前端已经不只是“枚举了一组状态名”，而是开始具备可直接复用于未来 TUI 编排的状态跃迁规则。后续要做全屏界面时，可以直接围绕事件和转移表编排视图，而不是重新把业务状态推进逻辑散落回 UI 分支中。
 

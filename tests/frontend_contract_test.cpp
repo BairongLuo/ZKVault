@@ -244,6 +244,11 @@ void TestExplicitStateMachineTransitions() {
                 FrontendSessionState::kShowingEntry,
             "list view should transition into entry view");
     Require(ResolveStateTransition(
+                FrontendSessionState::kShowingEntry,
+                FrontendStateEvent::kIdleTimeoutElapsed) ==
+                FrontendSessionState::kLocked,
+            "visible states should allow idle lock transition");
+    Require(ResolveStateTransition(
                 FrontendSessionState::kConfirmingEntryOverwrite,
                 FrontendStateEvent::kConfirmationAccepted) ==
                 FrontendSessionState::kEditingEntryForm,
@@ -301,6 +306,10 @@ void TestFrontendStateMachine() {
     Require(state_machine.HandleCommand(FrontendCommandKind::kUnlock) ==
                 FrontendSessionState::kUnlockingSession,
             "state machine should reuse shared transition table for unlock");
+    state_machine.SetState(FrontendSessionState::kShowingEntry);
+    Require(state_machine.HandleIdleTimeout() ==
+                FrontendSessionState::kLocked,
+            "state machine should support idle-lock transitions");
     Require(state_machine.HandleFailure(false) ==
                 FrontendSessionState::kLocked,
             "failure handler should recover to locked when session is absent");
@@ -364,6 +373,13 @@ void TestActionResultsAndRendering() {
             "locked result should map to locked state");
     Require(RenderFrontendActionResult(locked) == "vault locked",
             "locked result should render lock message");
+
+    const FrontendActionResult idle_locked = BuildIdleLockedResult();
+    Require(idle_locked.state == FrontendSessionState::kLocked,
+            "idle-lock result should map to locked state");
+    Require(RenderFrontendActionResult(idle_locked) ==
+                "vault locked due to inactivity",
+            "idle-lock result should render timeout message");
 
     const FrontendActionResult unlocked = BuildUnlockedResult();
     Require(unlocked.state == FrontendSessionState::kReady,
@@ -482,6 +498,10 @@ void TestErrorClassification() {
     Require(ClassifyFrontendError("input cancelled").kind ==
                 FrontendErrorKind::kInputCancelled,
             "input cancellation should be classified");
+    Require(ClassifyFrontendError(
+                "invalid ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS").kind ==
+                FrontendErrorKind::kValidation,
+            "idle-timeout configuration errors should be classified");
     Require(ClassifyFrontendError(
                 "entry name may only contain letters, digits, '.', '-' and '_'")
                 .kind == FrontendErrorKind::kValidation,
