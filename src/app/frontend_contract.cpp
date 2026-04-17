@@ -644,7 +644,7 @@ FrontendActionResult BuildTuiReadyResult() {
     return FrontendActionResult{
         FrontendSessionState::kReady,
         FrontendPayloadKind::kText,
-        "tui ready; type help for commands",
+        "tui ready; use ? for help",
         "",
         {},
         {},

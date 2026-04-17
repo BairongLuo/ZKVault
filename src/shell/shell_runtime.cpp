@@ -190,6 +190,23 @@ void RefreshBrowseState(VaultSession& session, ShellBrowseState& state) {
     state.selected_index = previous_index;
 }
 
+void SyncBrowseStateAfterMutation(
+    VaultSession& session,
+    ShellBrowseState& state,
+    std::string_view entry_name) {
+    if (!state.active) {
+        ActivateBrowseState(session, state, "");
+    } else {
+        RefreshBrowseState(session, state);
+    }
+
+    if (entry_name.empty()) {
+        return;
+    }
+
+    static_cast<void>(SelectBrowseEntry(state, entry_name));
+}
+
 void FocusBrowseEntry(
     VaultSession& session,
     ShellBrowseState& state,
@@ -320,7 +337,12 @@ FrontendActionResult ExecuteShellCommand(
     ShellRuntimeState& runtime,
     const FrontendCommand& command) {
     static_cast<void>(runtime.state_machine.HandleCommand(command.kind));
+    return ExecutePreparedShellCommand(runtime, command);
+}
 
+FrontendActionResult ExecutePreparedShellCommand(
+    ShellRuntimeState& runtime,
+    const FrontendCommand& command) {
     if (command.kind == FrontendCommandKind::kHelp) {
         return FinalizeShellResult(
             runtime.state_machine,
@@ -431,8 +453,10 @@ FrontendActionResult ExecuteShellCommand(
         };
         auto request_guard = MakeScopedCleanse(request);
         const StorePasswordEntryResult result = active_session.StoreEntry(request);
-        RefreshBrowseState(active_session, runtime.browse_state);
-        static_cast<void>(SelectBrowseEntry(runtime.browse_state, command.name));
+        SyncBrowseStateAfterMutation(
+            active_session,
+            runtime.browse_state,
+            command.name);
         return FinalizeShellResult(
             runtime.state_machine,
             runtime.view_context,
@@ -456,8 +480,10 @@ FrontendActionResult ExecuteShellCommand(
         };
         auto request_guard = MakeScopedCleanse(request);
         const StorePasswordEntryResult result = active_session.StoreEntry(request);
-        RefreshBrowseState(active_session, runtime.browse_state);
-        static_cast<void>(SelectBrowseEntry(runtime.browse_state, command.name));
+        SyncBrowseStateAfterMutation(
+            active_session,
+            runtime.browse_state,
+            command.name);
         return FinalizeShellResult(
             runtime.state_machine,
             runtime.view_context,
@@ -504,6 +530,23 @@ FrontendActionResult ExecuteShellCommand(
     }
 
     throw std::runtime_error("unknown shell command");
+}
+
+FrontendActionResult ShowCurrentShellBrowseView(
+    ShellRuntimeState& runtime) {
+    if (!runtime.session.has_value()) {
+        throw std::runtime_error("vault is locked");
+    }
+
+    VaultSession& active_session = *runtime.session;
+    if (!runtime.browse_state.active) {
+        ActivateBrowseState(active_session, runtime.browse_state, "");
+    }
+
+    return FinalizeShellResult(
+        runtime.state_machine,
+        runtime.view_context,
+        BuildBrowseResult(runtime.browse_state));
 }
 
 FrontendActionResult HandleShellIdleTimeout(ShellRuntimeState& runtime) {

@@ -77,6 +77,13 @@ FrontendActionResult ExecuteShellCommand(
     ShellRuntimeState& runtime,
     const FrontendCommand& command);
 
+FrontendActionResult ExecutePreparedShellCommand(
+    ShellRuntimeState& runtime,
+    const FrontendCommand& command);
+
+FrontendActionResult ShowCurrentShellBrowseView(
+    ShellRuntimeState& runtime);
+
 FrontendActionResult HandleShellIdleTimeout(ShellRuntimeState& runtime);
 
 std::optional<FrontendActionResult> RecoverShellViewAfterFailure(

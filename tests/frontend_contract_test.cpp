@@ -393,7 +393,7 @@ void TestActionResultsAndRendering() {
     Require(tui_ready.state == FrontendSessionState::kReady,
             "tui ready should map to ready state");
     Require(RenderFrontendActionResult(tui_ready) ==
-                "tui ready; type help for commands",
+                "tui ready; use ? for help",
             "tui ready message should match");
 
     const FrontendActionResult shell_help = BuildShellHelpResult();

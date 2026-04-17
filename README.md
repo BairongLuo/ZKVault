@@ -112,7 +112,7 @@ zkvault list
 
 这不是最终的全屏 TUI，但已经把未来界面层最关键的会话边界和状态持有方式跑通了。
 
-当前仓库也提供了 `zkvault tui` 原型。它在复用同一套前端契约与 shell runtime 的前提下，先接入备用屏幕（alternate screen）与全屏重绘骨架，用于验证未来 TUI 的屏幕生命周期、输出区域和浏览区编排方式。
+当前仓库也提供了 `zkvault tui` 原型。它在复用同一套前端契约与 shell runtime 的前提下，先接入备用屏幕（alternate screen）与全屏重绘骨架，并进一步显式区分 `Status`、`Browse`、`View` 三个屏幕区块，用于验证未来 TUI 的屏幕生命周期、输出区域和浏览区编排方式。
 
 需要特别说明：
 
@@ -120,6 +120,8 @@ zkvault list
 - 只有显式执行 `./build/zkvault shell` 时，才会进入当前的会话式终端前端原型
 - 显式执行 `./build/zkvault tui` 时，会进入当前的全屏 TUI 原型
 - `shell` 提示符、确认输入和备注输入已统一走终端输入层处理，退格时不会再在屏幕上回显 `^H`
+- `tui` 当前已切换为按键驱动：可用 `Up` / `Down` 或 `j` / `k` 移动列表焦点，按 `Enter` 查看详情，按 `?` 打开帮助，按 `Esc` 返回浏览区，按 `l` / `u` 锁定或解锁，按 `q` 退出
+- `tui` 当前重点覆盖浏览、帮助、详情与锁定边界；新增、更新、删除仍建议通过 CLI 或 `shell` 原型完成
 - 若设置 `ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS=<正整数>`，会话会在主提示符空闲超时后自动锁定并清屏
 
 当前 CLI 与 `shell` 已进一步共享同一套前端契约定义，集中收敛以下内容：
@@ -244,11 +246,12 @@ ctest --test-dir build
 ctest --test-dir build --output-on-failure
 ```
 
-当前仓库包含以下 CLI 测试，用于验证终端接入层是否能够正确驱动保险库核心并稳定处理异常路径：
+当前仓库包含以下终端接入层测试，用于验证前端边界是否能够正确驱动保险库核心并稳定处理异常路径：
 
 - `zkvault_cli_smoke`
 - `zkvault_cli_error_paths`
 - `zkvault_shell_smoke`
+- `zkvault_tui_smoke`
 - `zkvault_app_contract`
 - `zkvault_frontend_contract`
 - `zkvault_prompt_backspace`
@@ -292,6 +295,17 @@ ctest --test-dir build --output-on-failure
 - 主提示符空闲超时后自动锁定
 - 自动锁定时清屏，减少敏感内容停留在终端中的时间
 - 自动锁定后仍可手动解锁并继续会话
+
+`zkvault_tui_smoke` 使用 pseudo-terminal 验证全屏 TUI 原型，覆盖以下场景：
+
+- 备用屏幕进入与退出
+- 初始化后的 `Status` / `Browse` / `View` 屏幕区块与默认列表视图
+- 已有条目上的默认焦点与列表渲染
+- `Up` / `Down` 或 `j` / `k` 驱动的焦点移动
+- `show` 详情视图中的条目内容渲染
+- `help` 视图与 `Esc` 返回浏览区时保留当前焦点上下文
+- `lock` / `unlock` 之间的锁定态与解锁视图
+- `q` 退出时的备用屏幕恢复
 
 `zkvault_app_contract` 直接调用 `src/app/` 暴露的接入边界，不经过 CLI 提示词解析，覆盖以下契约：
 
@@ -337,16 +351,14 @@ bash tests/cli_smoke_test.sh ./build/zkvault
 
 ## 本次改动
 
-本轮提交继续推进“阶段二：终端接入层标准化”。在上一轮已经把列表浏览上下文跑通之后，这次进一步把 shell/未来 TUI 需要的状态推进逻辑真正组织成显式状态机与转移表，并继续封装成可直接被前端持有的状态机对象；同时补上空闲自动锁定这一条真正面向安全的会话保护路径。
+本轮提交继续推进“阶段三：TUI 应用实现”。在上一轮已经把 `zkvault tui` 从“显示上一条命令输出”推进为显式视图编排之后，这次进一步去掉全屏界面里的命令提示符，把主循环改成真正的按键驱动浏览，并补上对应的 pseudo-terminal 回归测试。
 
-- 在 `src/app/frontend_contract.*` 中新增前端状态事件、共享状态转移表以及统一的 `ResolveStateTransition(...)` 入口，覆盖启动、命令进入、确认通过、失败恢复等关键跃迁
-- 保留既有 `ResolveStartupState`、`ResolveCommandInputState`、`ResolvePostConfirmationState` 作为兼容包装，但它们现在都复用同一套状态机，不再各自手写映射分支
-- 新增 `FrontendStateMachine`，把“当前状态 + 事件推进 + 失败恢复”收敛成一个可复用对象，便于未来 TUI 直接持有和驱动
-- `src/shell/interactive_shell.cpp` 改为直接持有并消费共享状态机对象，统一处理命令进入、确认通过、动作结果落地和恢复完成四类状态推进
-- `src/terminal/prompt.*` 新增带超时的命令行读取能力；设置 `ZKVAULT_SHELL_IDLE_TIMEOUT_SECONDS` 后，shell 会在主提示符空闲超时后自动锁定并清屏
-- 扩展 `zkvault_frontend_contract`、`zkvault_prompt_backspace` 与新的 `zkvault_shell_idle_lock`，固化显式转移表、状态机对象以及空闲自动锁定路径，包括锁定态下查看帮助、帮助态发起解锁、确认通过、失败进入恢复态、主提示符读取超时以及超时后返回 `locked`
+- `src/tui/terminal_ui.cpp` 改为按共享前端状态渲染 `Status` / `Browse` / `View` 三个区块；帮助页、列表页、条目详情页与锁定/就绪提示都由状态驱动，而不是只回放最后一条文本输出
+- `tui` 主循环已改为单键事件：支持 `Up` / `Down`、`j` / `k` 浏览列表，`Enter` 查看条目，`?` 查看帮助，`Esc` 返回浏览区，以及 `l` / `u` / `q` 控制锁定、解锁与退出
+- 启动后会自动进入列表视图并保留焦点，帮助页和详情页与浏览区共享同一套焦点上下文，不再依赖 `zkvault[tui]>` 命令提示符
+- 扩展 `zkvault_tui_smoke`，覆盖按键导航、帮助视图、详情视图、锁定后的解锁视图以及备用屏幕退出，固化当前这条“最小真 TUI”路径
 
-这次改动后，当前终端前端已经不只是“枚举了一组状态名”，而是开始具备可直接复用于未来 TUI 编排的状态跃迁规则。后续要做全屏界面时，可以直接围绕事件和转移表编排视图，而不是重新把业务状态推进逻辑散落回 UI 分支中。
+这次改动后，全屏 TUI 已经不再依赖命令行解释器做主交互入口，而是开始具备真正的“列表焦点 + 快捷键导航 + 详情切换”骨架。后续继续补充新增/更新/删除表单、确认对话和更多快捷键时，可以直接沿着这套按键驱动循环与共享状态机继续扩展。
 
 ## 未来需要增加的内容
 
