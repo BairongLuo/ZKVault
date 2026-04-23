@@ -6,21 +6,12 @@
 #include <string>
 
 #include "app/frontend_contract.hpp"
-#include "crypto/secure_memory.hpp"
+#include "app/frontend_output.hpp"
 #include "shell/shell_runtime.hpp"
 #include "terminal/display.hpp"
 #include "terminal/prompt.hpp"
 
 namespace {
-
-void PrintFrontendResult(FrontendActionResult result) {
-    auto result_guard = MakeScopedCleanse(result);
-    std::string output = RenderFrontendActionResult(result);
-    auto output_guard = MakeScopedCleanse(output);
-    if (!output.empty()) {
-        std::cout << output << '\n';
-    }
-}
 
 PromptReadStatus ReadShellCommandLine(
     const std::optional<std::chrono::milliseconds>& idle_timeout,
@@ -43,9 +34,9 @@ int RunInteractiveShell() {
     const std::optional<std::chrono::milliseconds> idle_timeout =
         ReadShellIdleTimeout();
     if (open_result.startup_result.has_value()) {
-        PrintFrontendResult(std::move(*open_result.startup_result));
+        PrintFrontendResult(std::cout, std::move(*open_result.startup_result));
     }
-    PrintFrontendResult(BuildShellReadyResult());
+    PrintFrontendResult(std::cout, BuildShellReadyResult());
 
     std::string line;
     while (true) {
@@ -58,7 +49,7 @@ int RunInteractiveShell() {
             Cleanse(line);
             line.clear();
             ClearTerminalScreenIfInteractive();
-            PrintFrontendResult(HandleShellIdleTimeout(runtime));
+            PrintFrontendResult(std::cout, HandleShellIdleTimeout(runtime));
             continue;
         }
 
@@ -77,21 +68,17 @@ int RunInteractiveShell() {
             if (command.kind == FrontendCommandKind::kLock) {
                 ClearTerminalScreenIfInteractive();
             }
-            PrintFrontendResult(std::move(result));
+            PrintFrontendResult(std::cout, std::move(result));
             if (runtime.state_machine.state() ==
                 FrontendSessionState::kQuitRequested) {
                 return 0;
             }
         } catch (const std::exception& ex) {
-            FrontendError error = ClassifyFrontendError(ex.what());
-            std::string output = RenderFrontendError(error);
-            auto error_guard = MakeScopedCleanse(error);
-            auto output_guard = MakeScopedCleanse(output);
-            std::cout << output << '\n';
+            PrintFrontendError(std::cout, ex.what());
             std::optional<FrontendActionResult> recovered_result =
                 RecoverShellViewAfterFailure(runtime);
             if (recovered_result.has_value()) {
-                PrintFrontendResult(std::move(*recovered_result));
+                PrintFrontendResult(std::cout, std::move(*recovered_result));
             }
         }
     }
