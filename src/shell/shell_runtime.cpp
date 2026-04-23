@@ -548,6 +548,22 @@ FrontendActionResult StoreShellEntryWithContent(
             : BuildUpdatedResult(result.entry_path));
 }
 
+FrontendActionResult RotateShellMasterPassword(
+    ShellRuntimeState& runtime,
+    const std::string& new_master_password) {
+    if (!runtime.session.has_value()) {
+        throw std::runtime_error("vault is locked");
+    }
+
+    VaultSession& active_session = *runtime.session;
+    const RotateMasterPasswordResult result =
+        active_session.RotateMasterPassword(new_master_password);
+    return FinalizeShellResult(
+        runtime.state_machine,
+        runtime.view_context,
+        BuildUpdatedResult(result.master_key_path));
+}
+
 FrontendActionResult RemoveShellEntryByName(
     ShellRuntimeState& runtime,
     const std::string& entry_name) {

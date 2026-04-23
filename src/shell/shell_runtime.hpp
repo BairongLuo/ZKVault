@@ -88,6 +88,10 @@ FrontendActionResult StoreShellEntryWithContent(
     const std::string& password,
     const std::string& note);
 
+FrontendActionResult RotateShellMasterPassword(
+    ShellRuntimeState& runtime,
+    const std::string& new_master_password);
+
 FrontendActionResult RemoveShellEntryByName(
     ShellRuntimeState& runtime,
     const std::string& entry_name);

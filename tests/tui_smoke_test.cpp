@@ -460,11 +460,25 @@ void TestTuiSmoke(const char* binary_path) {
             "help add shortcut");
         ReadUntilContains(
             master.Get(),
+            "e         update the selected entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "help update shortcut");
+        ReadUntilContains(
+            master.Get(),
             "d         delete the selected entry",
             std::chrono::seconds(2),
             output,
             cursor,
             "help delete shortcut");
+        ReadUntilContains(
+            master.Get(),
+            "m         change the master password",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "help master password shortcut");
         const std::size_t help_state = output.rfind("Session: unlocked | State: help");
         Require(help_state != std::string::npos &&
                     output.find("> email", help_state) != std::string::npos,
@@ -487,6 +501,298 @@ void TestTuiSmoke(const char* binary_path) {
                 "returning from help should preserve the current browse selection; "
                 "captured output: " + output);
         }
+
+        WriteAll(master.Get(), "e");
+        ReadUntilContains(
+            master.Get(),
+            "View: confirm-overwrite",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "update confirmation view");
+        ReadUntilContains(
+            master.Get(),
+            "Update entry: email",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "update confirmation target");
+        WriteAll(master.Get(), "\x1b");
+        ReadUntilContains(
+            master.Get(),
+            "entry update cancelled",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "update cancellation status");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> email", list_state) != std::string::npos,
+                    "cancelling update should return to browse with email still selected");
+        }
+
+        WriteAll(master.Get(), "e");
+        ReadUntilContains(
+            master.Get(),
+            "View: confirm-overwrite",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "second update confirmation view");
+        WriteAll(master.Get(), "email\r");
+        ReadUntilContains(
+            master.Get(),
+            "View: edit-entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "update entry form view");
+        ReadUntilContains(
+            master.Get(),
+            "Update entry: email",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "update entry form heading");
+        ReadUntilContains(
+            master.Get(),
+            "The entry name is fixed during updates.",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "update entry fixed-name hint");
+        WriteAll(
+            master.Get(),
+            "3\t updated\r");
+        ReadUntilContains(
+            master.Get(),
+            "updated data/email.zkv",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "updated email status");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "list view after updating email");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> email", list_state) != std::string::npos,
+                    "updating email should return to browse with email still selected");
+        }
+
+        WriteAll(master.Get(), "\r");
+        ReadUntilContains(
+            master.Get(),
+            "View: entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "updated entry detail view");
+        ReadUntilContains(
+            master.Get(),
+            "\"note\": \"work login updated\"",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "updated entry note");
+        ReadUntilContains(
+            master.Get(),
+            "\"password\": \"hunter23\"",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "updated entry password");
+
+        WriteAll(master.Get(), "\x1b");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "browse view after leaving updated entry");
+
+        WriteAll(master.Get(), "m");
+        ReadUntilContains(
+            master.Get(),
+            "View: confirm-master-password-rotation",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "master password rotation confirmation view");
+        ReadUntilContains(
+            master.Get(),
+            "Change the master password",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "master password rotation confirmation heading");
+        WriteAll(master.Get(), "\x1b");
+        ReadUntilContains(
+            master.Get(),
+            "master password rotation cancelled",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "master password rotation cancellation status");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> email", list_state) != std::string::npos,
+                    "cancelling master password rotation should return to browse with email selected");
+        }
+
+        WriteAll(master.Get(), "m");
+        ReadUntilContains(
+            master.Get(),
+            "View: confirm-master-password-rotation",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "second master password rotation confirmation view");
+        WriteAll(master.Get(), "CHANGE\r");
+        ReadUntilContains(
+            master.Get(),
+            "View: edit-master-password",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "master password form view");
+        ReadUntilContains(
+            master.Get(),
+            "Change the master password.",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "master password form heading");
+        WriteAll(master.Get(), "new-master-password\tnew-master-password\r");
+        ReadUntilContains(
+            master.Get(),
+            "updated .zkv_master",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "updated master key status");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "list view after master password rotation");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> email", list_state) != std::string::npos,
+                    "rotating the master password should preserve the current browse selection");
+        }
+
+        WriteAll(master.Get(), "l");
+        ReadUntilContains(
+            master.Get(),
+            "vault locked",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "locked status after master password rotation");
+        ReadUntilContains(
+            master.Get(),
+            "View: locked",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "locked view after master password rotation");
+
+        WriteAll(master.Get(), "u");
+        ReadUntilContains(
+            master.Get(),
+            "View: unlock",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "unlock view after master password rotation");
+        ReadUntilContains(
+            master.Get(),
+            "Master password: ",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "unlock password prompt after master password rotation");
+        WriteAll(master.Get(), "test-master-password\n");
+        ReadUntilContains(
+            master.Get(),
+            "AES-256-GCM decryption failed",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "old master password unlock failure");
+        ReadUntilContains(
+            master.Get(),
+            "View: locked",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "locked view after failed unlock");
+
+        WriteAll(master.Get(), "u");
+        ReadUntilContains(
+            master.Get(),
+            "Master password: ",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "unlock password prompt after failed unlock");
+        WriteAll(master.Get(), "new-master-password\n");
+        ReadUntilContains(
+            master.Get(),
+            "vault unlocked",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "unlocked status with rotated master password");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "list view after unlock with rotated master password");
+        {
+            const std::size_t list_state = output.rfind("Session: unlocked | State: list");
+            Require(list_state != std::string::npos &&
+                        output.find("> bank", list_state) != std::string::npos,
+                    "unlocking with the rotated master password should reopen the browse view");
+        }
+
+        WriteAll(master.Get(), "j\r");
+        ReadUntilContains(
+            master.Get(),
+            "View: entry",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "entry detail view after unlock with rotated master password");
+        ReadUntilContains(
+            master.Get(),
+            "\"password\": \"hunter23\"",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "entry detail password after master password rotation");
+        WriteAll(master.Get(), "\x1b");
+        ReadUntilContains(
+            master.Get(),
+            "View: list",
+            std::chrono::seconds(2),
+            output,
+            cursor,
+            "browse view before delete after master password rotation");
 
         WriteAll(master.Get(), "d");
         ReadUntilContains(
@@ -547,66 +853,6 @@ void TestTuiSmoke(const char* binary_path) {
                         output.find("> bank", list_state) != std::string::npos,
                     "deleting email should return to browse with bank selected");
         }
-
-        WriteAll(master.Get(), "l");
-        ReadUntilContains(
-            master.Get(),
-            "vault locked",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "locked status");
-        ReadUntilContains(
-            master.Get(),
-            "View: locked",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "locked view");
-
-        WriteAll(master.Get(), "u");
-        ReadUntilContains(
-            master.Get(),
-            "View: unlock",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "unlock view");
-        ReadUntilContains(
-            master.Get(),
-            "Prompt: Master password (masked)",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "unlock prompt description");
-        ReadUntilContains(
-            master.Get(),
-            "Master password: ",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "unlock password prompt");
-        WriteAll(master.Get(), "test-master-password\n");
-        ReadUntilContains(
-            master.Get(),
-            "vault unlocked",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "unlocked status");
-        ReadUntilContains(
-            master.Get(),
-            "View: list",
-            std::chrono::seconds(2),
-            output,
-            cursor,
-            "list view after unlock");
-        const std::size_t list_state_after_unlock =
-            output.rfind("Session: unlocked | State: list");
-        Require(list_state_after_unlock != std::string::npos &&
-                    output.find("> bank", list_state_after_unlock) !=
-                        std::string::npos,
-                "unlocking should restore the browse view with a focused entry");
 
         WriteAll(master.Get(), "q");
         ReadUntilContains(
